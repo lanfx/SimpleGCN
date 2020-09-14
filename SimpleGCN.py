@@ -9,6 +9,8 @@ DataSet = namedtuple(
     'DataSet',
     field_names=['A','x_train', 'y_train', 'x_test', 'y_test']
 )
+
+
 def load_karate_club():
     edgelist = np.loadtxt("data/karate.edgelist", dtype=int)
     features = np.loadtxt("data/karate.attributes.csv", dtype=str, skiprows=1, delimiter=',')
@@ -30,6 +32,7 @@ def load_karate_club():
         A[row[0]][row[1]]=1.
     return DataSet(A,x_train,y_train,x_test,y_test)
 
+
 def pre_processing_adj(A):
     # A_eye=A+sp.eye(A.shape[0])
     # rowsum = np.array(A_eye.sum(1))
@@ -42,6 +45,7 @@ def pre_processing_adj(A):
     d_inv_sqrt[np.isinf(d_inv_sqrt)] = 0.
     d_mat_inv_sqrt = np.diag(d_inv_sqrt)
     return A_eye.dot(d_mat_inv_sqrt).transpose().dot(d_mat_inv_sqrt).astype('float32')
+
 
 class SpectralLayer(tf.keras.layers.Layer):
     def __init__(self,A,units,name=None,activation=None):
@@ -64,14 +68,13 @@ class SpectralLayer(tf.keras.layers.Layer):
             output = tf.nn.relu(tf.matmul(AX, self.w))
         return output
 
+
 class LogicRegressor(tf.keras.layers.Layer):
     def __init__(self,name=None):
         super().__init__(name=name)
 
 
     def build(self,input_shape):
-        #self.w = np.zeros((input_shape[1], 1))
-        #self.w = np.ones((input_shape[1], 1))
         initializer = tf.keras.initializers.GlorotNormal()
         self.w = tf.Variable(initializer(shape=(input_shape[-1], 1)), name='w')
         self.b=tf.Variable(tf.zeros([1]),name='b')
@@ -79,6 +82,7 @@ class LogicRegressor(tf.keras.layers.Layer):
     def call(self,input):
         output=tf.matmul(input,self.w)+self.b
         return tf.nn.sigmoid(output)
+
 
 class GCNModel(tf.keras.models.Model):
     def __init__(self,A,name=None):
@@ -95,39 +99,43 @@ class GCNModel(tf.keras.models.Model):
         #return result_s1,result_s2,result_c
         return result_c
 
+
 def cross_loss(target_y, predicted_y):
   return tf.reduce_mean(tf.square(target_y - predicted_y))
 
-def train(model, X, x_train, y_train, learning_rate, epochs):
-    for epoch in range(1, epochs + 1):
-        cur_loss = 0.
-        cur_preds = []
-        for i, x in enumerate(x_train):
-            # Trainable variables are automatically tracked by GradientTape
-            # Use GradientTape to calculate the gradients with respect to W and b
-            with tf.GradientTape() as t:
-                preds = model(X)[x]
-                loss = cross_loss(y_train[i], preds)
 
-            dw1, dw2, dcw, dcb = t.gradient(loss,
-                                            [model.spectralLayer1.w, model.spectralLayer2.w, model.classifyLayer.w,
-                                             model.classifyLayer.b])
-            # Subtract the gradient scaled by the learning rate
-            model.spectralLayer1.w.assign_sub(learning_rate * dw1)
-            model.spectralLayer2.w.assign_sub(learning_rate * dw2)
-            model.classifyLayer.w.assign_sub(learning_rate * dcw)
-            model.classifyLayer.b.assign_sub(learning_rate * dcb)
+# def train(model, X, x_train, y_train, learning_rate, epochs):
+#     for epoch in range(1, epochs + 1):
+#         cur_loss = 0.
+#         cur_preds = []
+#         for i, x in enumerate(x_train):
+#             # Trainable variables are automatically tracked by GradientTape
+#             # Use GradientTape to calculate the gradients with respect to W and b
+#             with tf.GradientTape() as t:
+#                 preds = model(X)[x]
+#                 loss = cross_loss(y_train[i], preds)
+#
+#             dw1, dw2, dcw, dcb = t.gradient(loss,
+#                                             [model.spectralLayer1.w, model.spectralLayer2.w, model.classifyLayer.w,
+#                                              model.classifyLayer.b])
+#             # Subtract the gradient scaled by the learning rate
+#             model.spectralLayer1.w.assign_sub(learning_rate * dw1)
+#             model.spectralLayer2.w.assign_sub(learning_rate * dw2)
+#             model.classifyLayer.w.assign_sub(learning_rate * dcw)
+#             model.classifyLayer.b.assign_sub(learning_rate * dcb)
+#
+#             cur_loss += loss
+#             cur_preds += [preds]
+#             # cur_preds.append(np.array(preds))
+#         if (epoch % (epochs // 10)) == 0:
+#             print(f"Epoch {epoch}/{epochs} -- Loss: {cur_loss: .4f}")
+#             print("cum_preds:", cur_preds)
 
-            cur_loss += loss
-            cur_preds += [preds]
-            #cur_preds.append(np.array(preds))
-        if (epoch % (epochs // 10)) == 0:
-            print(f"Epoch {epoch}/{epochs} -- Loss: {cur_loss: .4f}")
-            print("cum_preds:", cur_preds)
 
 def predict(model, X, nodes):
     preds=np.array(model(X)).flatten()[nodes]
     return np.where(preds >= 0.5, 1, 0)
+
 
 def accuracy(y_true,y_predcit):
     num=0
@@ -136,6 +144,8 @@ def accuracy(y_true,y_predcit):
             num+=1
     return num/len(y_true)
 # initial
+
+
 zkc=load_karate_club()
 A=zkc.A
 A=pre_processing_adj(A)#.todense()
@@ -146,18 +156,19 @@ y_test=zkc.y_test.tolist()
 X=tf.eye(A.shape[0])
 model=GCNModel(A,name="myModel")
 # train use custom method
-#train(model,X,x_train,y_train,0.1,100)
+train(model,X,x_train,y_train,0.01,500)
 test_result=predict(model,X,x_test)
 print(accuracy(y_test,test_result))
-#train use keras's API
+
+# train use keras's API
 # model.compile(
 #     run_eagerly=False,
 #     optimizer=tf.keras.optimizers.SGD(learning_rate=0.1),
 #     loss=tf.keras.losses.mean_squared_error,
 # )
 # model.fit(x_test, y_test, epochs=100, batch_size=1)
-#
+
 # print model
-print(model.variables)
-# print(model.submodules)
+#print(model.variables)
+#print(model.submodules)
 #print(model.summary())
